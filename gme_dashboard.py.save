@@ -1,0 +1,118 @@
+k        endDateTime="",
+        durationStr="6 M",
+        barSizeSetting="1 day",
+        whatToShow="TRADES",
+        useRTH=True,
+        formatDate=1
+    )
+
+    if not bars:
+        print("❌ No data received from IBKR.")
+        return
+
+    # Convert to DataFrame
+    df = util.df(bars)
+    df.rename(columns={"date": "Date", "close": "Close"}, inplace=True)
+    df.set_index("Date", inplace=True)
+    data = df.dropna()
+
+    # --- 3. Calculate moving averages ---
+    data["20_MA"] = data["Close"].rolling(window=20).mean()
+    data["50_MA"] = data["Close"].rolling(window=50).mean()
+    data["100_MA"] = data["Close"].rolling(window=100).mean()
+
+    # --- 4. Calculate RSI ---
+    def compute_rsi(series, period=14):
+        delta = series.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        rs = gain / loss
+        return 100 - (100 / (1 + rs))
+
+    data["RSI"] = compute_rsi(data["Close"])
+
+    # --- 5. Display summary ---
+    latest = data.iloc[-1]
+    print("\n📈 GME Price and Technical Indicators:")
+    print(f"Current Price: ${latest['Close']:.2f}")
+    print(f"20-day MA:     ${latest['20_MA']:.2f}")
+    print(f"50-day MA:     ${latest['50_MA']:.2f}")
+    print(f"100-day MA:    ${latest['100_MA']:.2f}")
+    print(f"RSI:           {latest['RSI']:.2f}")
+
+    # --- 6. Option Chain Summary from ChartExchange ---
+    print("\n📊 Pulling Option Chain Summary from ChartExchange...")
+    max_pain, ratio = "", ""
+    try:
+        ce_url = "https://chartexchange.com/symbol/nyse-gme/optionchain/summary/"
+        headers = {"User-Agent": "Mozilla/5.0"}
+        req = urllib.request.Request(ce_url, headers=headers)
+        with urllib.request.urlopen(req) as response:
+            html = response.read()
+        soup = BeautifulSoup(html, "html.parser")
+        cells = soup.find_all("td")
+        if cells:
+            for td in cells:
+                if "Put/Call OI Ratio" in td.text:
+                    ratio = td.find_next("td").text.strip()
+                    print(f"Put/Call OI Ratio: {ratio}")
+                if "Max Pain" in td.text:
+                    max_pain = td.find_next("td").text.strip()
+                    print(f"Max Pain Price:   {max_pain}")
+    except Exception as e:
+        print("❌ Error loading ChartExchange data:", e)
+
+    # --- 7. Log sentiment ---
+    def log_option_sentiment(max_pain, put_call_ratio):
+        today = datetime.date.today().isoformat()
+        filepath = "oi_iv_log.csv"
+        new_row = {
+            "Date": today,
+            "MaxPain": max_pain,
+            "PutCallOI": put_call_ratio
+        }
+        try:
+            df = pd.read_csv(filepath)
+		if today not in df["Date"].values:
+    		df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+    		df.to_csv(filepath, index=False)
+                print("📝 OI/IV sentiment logged.")
+            else:
+                print("🕓 Sentiment already logged today.")
+        except FileNotFoundError:
+            pd.DataFrame([new_row]).to_csv(filepath, index=False)
+            print("📄 New OI/IV sentiment log created.")
+
+    log_option_sentiment(max_pain, ratio)
+
+    # --- 8. Save chart snapshot ---
+    data[["Close", "20_MA", "50_MA", "100_MA"]].plot(figsize=(10, 5), title="GME Price & Moving Averages")
+    plt.tight_layout()
+    plt.savefig("gme_price_moving_avg.png")
+
+    # --- 9. Alerts & Suggestions ---
+    print("\n🚨 Alerts:")
+    if latest["Close"] > latest["20_MA"] > latest["50_MA"] > latest["100_MA"]:
+        print("✅ Bullish alignment: Price > 20 > 50 > 100-day MA")
+    if latest["RSI"] > 70:
+        print("⚠️ RSI Overbought (>70)")
+    elif latest["RSI"] < 30:
+        print("�� RSI Oversold (<30)")
+    else:
+        print("RSI in neutral range.")
+
+    print("\n✅ Dashboard Complete. Use this alongside OI/IV data from Fidelity & MarketChameleon.")
+
+    # --- 10. Disconnect from IBKR ---
+    ib.disconnect()
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e):
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(main())
+        else:
+            raise
+
