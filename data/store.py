@@ -210,7 +210,7 @@ class WheelStore:
     # High-level: load a full WheelCycle object
     # ------------------------------------------------------------------
 
-    def load_cycle(self, cycle_id: int) -> Optional["WheelCycle"]:
+    def load_cycle(self, cycle_id: int) -> Optional["WheelCycle"]:  # noqa: F821
         from strategy.wheel import WheelCycle, WheelLeg, WheelState, LegType
         cycle_row = None
         with sqlite3.connect(self.db_path) as conn:
@@ -250,7 +250,7 @@ class WheelStore:
             notes=cycle_row[5] or "",
         )
 
-    def load_active_cycle(self, ticker: str) -> Optional["WheelCycle"]:
+    def load_active_cycle(self, ticker: str) -> Optional["WheelCycle"]:  # noqa: F821
         active = self.get_active_cycle(ticker)
         if not active:
             return None
