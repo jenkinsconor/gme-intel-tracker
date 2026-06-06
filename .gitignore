@@ -6,3 +6,7 @@ __pycache__/
 secrets.toml
 *.csv
 *.log
+
+# Private data — never commit these
+gme_intel.db          # trade history, positions, IV log — your personal data
+.ftd_cache/           # cached SEC FTD downloads
